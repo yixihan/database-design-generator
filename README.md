@@ -1,7 +1,23 @@
-# database-design-generator
+<div align="center">
+  <div><h1>数据库设计表自动生成器</h1></div>
+  <div>
+    <img
+      src="https://img.shields.io/badge/Hutool-5.8.10-blue.svg"
+      alt="Coverage Status"
+    />
+    <img
+      src="https://img.shields.io/badge/poi-5.2.2-blue.svg"
+      alt="Downloads"
+    />
+    <img
+      src="https://visitor-badge.glitch.me/badge?page_id=yixihan.database-design-generator&left_color=green&right_color=red"
+    />
+  </div>
+</div>
+<br>
 
+## 用途
 用于自动生成数据库设计表, 以 excel 文件形式展示
-
 
 
 ## 使用教程
