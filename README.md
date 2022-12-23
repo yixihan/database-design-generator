@@ -45,7 +45,7 @@ jdbc.password=123456
 custom.tableNames=example01,example02
 
 # excel 文件输出目录, dir 为相对路径
-custom.out.dir=/out
+custom.out.dir=out
 custom.out.fileName=example.xlsx
 
 ```
@@ -54,7 +54,7 @@ custom.out.fileName=example.xlsx
 
 ### 修改 application.properties
 
-指定为你自定义的配置文件
+将 [application.properties](src/main/resources/application.properties) 中启用的配置文件指定为你自定义的配置文件
 
 ![image-20221222160634152](https://typora-oss.yixihan.chat//img/202212221606223.png)
 
@@ -73,7 +73,7 @@ enable.config=example.properties
 
 运行 `DatabaseDesignGenerator.java`
 
-![image-20221222160903795](https://typora-oss.yixihan.chat//img/202212221609269.png)
+![image-202212231021771](https://typora-oss.yixihan.chat//img/202212231021771.png)
 
 
 
@@ -89,4 +89,5 @@ enable.config=example.properties
 
 ## 常见问题
 
-- 暂无
+- 一般常见问题请见log输出
+- 其余问题请提issue
