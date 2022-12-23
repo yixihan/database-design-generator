@@ -26,7 +26,7 @@
 
 新建 xxx.properties 文件, 内容可参考 [example.properties](src/main/resources/config/example.properties)
 
-![image-20221222160417123](https://typora-oss.yixihan.chat//img/202212221604457.png)
+![image-202212231024775](https://typora-oss.yixihan.chat//img/202212231024775.png)
 
 
 
