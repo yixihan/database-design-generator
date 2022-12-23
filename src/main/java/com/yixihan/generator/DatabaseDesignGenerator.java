@@ -33,9 +33,9 @@ public class DatabaseDesignGenerator {
     private static final String CONFIG_PATH = "/application.properties";
     
     /**
-     * 启用配置文件路径前缀
+     * 启用配置文件路径
      */
-    private static final String PREFIX_PATH = "/config/%s";
+    private static final String ENABLE_CONFIG_PATH = "/config/%s";
     
     /**
      * information_schema 表名
@@ -61,7 +61,7 @@ public class DatabaseDesignGenerator {
      */
     private static final Log log = LogFactory.get ();
     
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         Properties props;
         try {
             // 加载主配置文件
@@ -70,18 +70,21 @@ public class DatabaseDesignGenerator {
             configProps.load (configParams);
         
             // 获取启用的配置文件
-            String enableConfigPath = String.format (PREFIX_PATH, configProps.getProperty ("enable.config"));
+            String enableConfigPath = String.format (ENABLE_CONFIG_PATH, configProps.getProperty ("enable.config"));
             // 加载启用的配置文件
             InputStream enableParams = DatabaseDesignGenerator.class.getResourceAsStream (enableConfigPath);
             props = new Properties ();
             props.load (enableParams);
+            
+            // 数据源配置
+            Class.forName (props.getProperty ("jdbc.driver"));
         } catch (IOException e) {
             log.error ("加载配置文件出错, 请检查!");
             throw new RuntimeException (e);
+        } catch (ClassNotFoundException e) {
+            log.error ("无jdbc jar 包");
+            throw new RuntimeException (e);
         }
-    
-        // 数据源配置
-        Class.forName (props.getProperty ("jdbc.driver"));
         
         // 获取需要生成的表
         String database = props.getProperty ("jdbc.database");
@@ -190,6 +193,7 @@ public class DatabaseDesignGenerator {
      * 数据库表结构输出
      *
      * @param writer excel writer
+     * @param table 数据库表结构
      */
     private static void writeColumnsExcel (ExcelWriter writer, Tables table) {
         // 设置 sheet 名
