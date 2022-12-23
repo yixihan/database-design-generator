@@ -1,5 +1,6 @@
 package com.yixihan.generator;
 
+import cn.hutool.core.io.IORuntimeException;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.log.Log;
 import cn.hutool.log.LogFactory;
@@ -12,6 +13,7 @@ import com.yixihan.enums.NullAbleEnums;
 import com.yixihan.util.FileUtils;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.sql.*;
 import java.util.*;
@@ -45,44 +47,73 @@ public class DatabaseDesignGenerator {
     private static final String NO = "否";
     
     /**
-     * 数据库表
+     * 数据库表列表
      */
     private static final List<Tables> TABLES_LIST = new ArrayList<> ();
     
+    /**
+     * 数据库列列表
+     */
+    private static final List<Columns> COLUMNS_LIST = new ArrayList<> ();
+    
+    /**
+     * log
+     */
     private static final Log log = LogFactory.get ();
     
     public static void main(String[] args) throws Exception {
-        // 加载主配置文件
-        InputStream configParams = DatabaseDesignGenerator.class.getResourceAsStream (CONFIG_PATH);
-        Properties configProps = new Properties ();
-        configProps.load (configParams);
+        Properties props;
+        try {
+            // 加载主配置文件
+            InputStream configParams = DatabaseDesignGenerator.class.getResourceAsStream (CONFIG_PATH);
+            Properties configProps = new Properties ();
+            configProps.load (configParams);
         
-        // 获取启用的配置文件
-        String enableConfigPath = String.format (PREFIX_PATH, configProps.getProperty ("enable.config"));
-        // 加载启用的配置文件
-        InputStream enableParams = DatabaseDesignGenerator.class.getResourceAsStream (enableConfigPath);
-        Properties props = new Properties ();
-        props.load (enableParams);
-        
+            // 获取启用的配置文件
+            String enableConfigPath = String.format (PREFIX_PATH, configProps.getProperty ("enable.config"));
+            // 加载启用的配置文件
+            InputStream enableParams = DatabaseDesignGenerator.class.getResourceAsStream (enableConfigPath);
+            props = new Properties ();
+            props.load (enableParams);
+        } catch (IOException e) {
+            log.error ("加载配置文件出错, 请检查!");
+            throw new RuntimeException (e);
+        }
+    
         // 数据源配置
         Class.forName (props.getProperty ("jdbc.driver"));
         
         // 获取需要生成的表
-        log.info ("获取 {} 表列表..", props.getProperty ("jdbc.database"));
+        String database = props.getProperty ("jdbc.database");
+        log.info ("获取 {} 表列表...", database);
         getTables (props);
-        log.info ("{} 表列表获取成功, 共 {} 张表", props.getProperty ("jdbc.database"), TABLES_LIST.size ());
+        log.info ("{} 表列表获取成功, 共 {} 张表", database, TABLES_LIST.size ());
         
+        // 获取列结构
+        log.info ("获取 {} 列结构...", database);
+        getColumns (
+                props,
+                TABLES_LIST.stream ()
+                        .map (Tables::getTableName)
+                        .collect(Collectors.toList())
+        );
+        log.info ("获取 {} 列结构成功, 共 {} 个列", database, COLUMNS_LIST.size ());
+    
         // 获取表的详细列结构
+        Map<String, List<Columns>> columnMap = COLUMNS_LIST.stream ()
+                .collect (Collectors.groupingBy (
+                        Columns::getTableName,
+                        HashMap::new,
+                        Collectors.toList())
+                );
         for (Tables table : TABLES_LIST) {
             log.info ("获取 {} 表详细结构...", table.getTableName ());
-            getColumns (table, props);
-            log.info ("获取 {} 表详细结构成功!", table.getTableName ());
+            table.setColumnList (columnMap.getOrDefault (table.getTableName (), new ArrayList<> ()));
+            log.info ("获取 {} 表详细结构成功! 共 {} 列", table.getTableName (), table.getColumnList ().size ());
         }
         
         // 写出到 excel 文件
         writerExcel (props);
-        log.info ("excel生成完毕!");
-        
     }
     
     /**
@@ -97,26 +128,38 @@ public class DatabaseDesignGenerator {
         String fileName = props.getProperty ("custom.out.fileName");
     
         // 清空输出目录
-        String pathname = projectPath + "/" + dir;
-        log.info ("清空输出目录 : {}...", pathname);
+        String pathname = projectPath + "\\" + dir;
+        log.info ("清空输出目录...");
         FileUtils.emptyDir (new File (pathname));
         log.info ("生成excel..");
-        
-        // 通过工具类创建writer
-        ExcelWriter writer = ExcelUtil.getWriter (pathname + "/" + fileName);
     
-        writeTableExcel (writer);
+        try {
+            // 通过工具类创建writer
+            ExcelWriter writer = ExcelUtil.getWriter (pathname + "\\" + fileName);
         
-        writer = ExcelUtil.getWriter (pathname + "/" + fileName);
-    
-        for (Tables table : TABLES_LIST) {
-            writeColumnsExcel (writer, table);
+            writeTableExcel (writer);
+        
+            writer = ExcelUtil.getWriter (pathname + "\\" + fileName);
+        
+            for (Tables table : TABLES_LIST) {
+                writeColumnsExcel (writer, table);
+            }
+        
+            writer.flush ();
+            log.info ("excel生成完毕!");
+            log.info ("生成路径 : {}", pathname + "\\" + fileName);
+        } catch (IORuntimeException e) {
+            log.error ("写入excel失败!");
+            throw new RuntimeException (e);
         }
-        
-        writer.flush ();
     
     }
     
+    /**
+     * 数据库表列表输出
+     *
+     * @param writer excel writer
+     */
     private static void writeTableExcel (ExcelWriter writer) {
         // 设置 sheet 名
         writer.setSheet ("数据库表设计-表清单");
@@ -143,6 +186,11 @@ public class DatabaseDesignGenerator {
         writer.flush ();
     }
     
+    /**
+     * 数据库表结构输出
+     *
+     * @param writer excel writer
+     */
     private static void writeColumnsExcel (ExcelWriter writer, Tables table) {
         // 设置 sheet 名
         writer.setSheet (table.getTableComment ());
@@ -172,36 +220,45 @@ public class DatabaseDesignGenerator {
     /**
      * 获取需要生成的数据库设计表具体表结构
      *
-     * @param table 表名
      * @param props 配置
+     * @param tableNameList 数据库表名列表
      */
-    private static void getColumns(Tables table, Properties props) throws SQLException {
+    private static void getColumns(Properties props, List<String> tableNameList) {
         Connection connection = getConnection (props);
         String sql = "select `TABLE_SCHEMA`, `TABLE_NAME`, `COLUMN_NAME`, `ORDINAL_POSITION`," +
                 "`IS_NULLABLE`, `DATA_TYPE`, `COLUMN_KEY`, `EXTRA`, `COLUMN_COMMENT` " +
                 "from `COLUMNS` " +
-                "where `TABLE_SCHEMA` = ? and `TABLE_NAME` = ?" ;
+                "where `TABLE_SCHEMA` = ? and `TABLE_NAME` in (?)" ;
+        String inSql = tableNameList.stream ()
+                .map ((o) -> "'" + o + "'")
+                .collect (Collectors.joining (",", "(", ")"));
+        sql = sql.replace ("(?)", inSql);
+    
+        try {
+            // 填充占位符
+            PreparedStatement st = connection.prepareStatement(sql);
+            st.setString (1, props.getProperty ("jdbc.database"));
+            // 执行
+            ResultSet resultSet = st.executeQuery ();
         
-        // 填充占位符
-        PreparedStatement st = connection.prepareStatement(sql);
-        st.setString (1, table.getTableSchema ());
-        st.setString (2, table.getTableName ());
-        // 执行
-        ResultSet resultSet = st.executeQuery ();
-        
-        // 获取结果
-        List<Columns> columnList = new ArrayList<> ();
-        while (resultSet.next ()) {
-            columnList.add (init (resultSet));
+            // 获取结果
+            while (resultSet.next ()) {
+                COLUMNS_LIST.add (initColumn (resultSet));
+            }
+        } catch (SQLException e) {
+            log.error ("查询列结构失败");
+            throw new RuntimeException (e);
         }
     
-        table.setColumnList (columnList);
     }
     
     /**
      * 根据结果, 生成 {@link Columns}
+     * 
+     * @param resultSet 数据库查询结果
+     * @throws SQLException sql异常
      */
-    private static Columns init (ResultSet resultSet) throws SQLException {
+    private static Columns initColumn(ResultSet resultSet) throws SQLException {
         Columns column = new Columns ();
         column.setTableSchema (resultSet.getString ("TABLE_SCHEMA"));
         column.setTableName (resultSet.getString ("TABLE_NAME"));
@@ -251,7 +308,7 @@ public class DatabaseDesignGenerator {
      *
      * @param props 配置
      */
-    private static void getTables(Properties props) throws SQLException {
+    private static void getTables(Properties props) {
         // 获取配置文件内表名
         String tables = props.getProperty ("custom.tableNames");
         // 获取配置文件内数据库名
@@ -275,22 +332,39 @@ public class DatabaseDesignGenerator {
                     "from `TABLES` " +
                     "where `TABLE_SCHEMA` = ?";
         }
-        
-        // 填充占位符
-        PreparedStatement st = connection.prepareStatement(sql);
-        st.setString (1, database);
-        // 执行
-        ResultSet resultSet = st.executeQuery ();
-        // 获取结果
-        while (resultSet.next ()) {
-            Tables table = new Tables ();
-            table.setTableSchema (resultSet.getString ("TABLE_SCHEMA"));
-            table.setTableName (resultSet.getString ("TABLE_NAME"));
-            table.setTableComment (resultSet.getString ("TABLE_COMMENT"));
-            table.setTableRemarks (table.getTableComment ());
-            table.setOrdinalPosition (order++);
-            TABLES_LIST.add (table);
+    
+        try {
+            // 填充占位符
+            PreparedStatement st = connection.prepareStatement(sql);
+            st.setString (1, database);
+            // 执行
+            ResultSet resultSet = st.executeQuery ();
+            // 获取结果
+            while (resultSet.next ()) {
+                TABLES_LIST.add (initTable (resultSet, order++));
+            }
+        } catch (SQLException e) {
+            log.error ("查询表结构失败");
+            throw new RuntimeException (e);
         }
+    }
+    
+    /**
+     * 根据结果, 生成 {@link Tables}
+     * 
+     * @param resultSet 数据库查询结果
+     * @param order 序号
+     * @return {@link Tables}
+     * @throws SQLException sql异常
+     */
+    private static Tables initTable (ResultSet resultSet, Long order) throws SQLException {
+        Tables table = new Tables ();
+        table.setTableSchema (resultSet.getString ("TABLE_SCHEMA"));
+        table.setTableName (resultSet.getString ("TABLE_NAME"));
+        table.setTableComment (resultSet.getString ("TABLE_COMMENT"));
+        table.setTableRemarks (table.getTableComment ());
+        table.setOrdinalPosition (order);
+        return table;
     }
     
     /**
@@ -299,12 +373,19 @@ public class DatabaseDesignGenerator {
      * @param props 配置
      * @return {@link Connection}
      */
-    private static Connection getConnection(Properties props) throws SQLException {
-        String url = props.getProperty ("jdbc.url") + "/" + 
-                DatabaseDesignGenerator.INFORMATION_SCHEMA_NAME + 
-                props.getProperty ("jdbc.suffix");
-        String username = props.getProperty ("jdbc.username");
-        String password = props.getProperty ("jdbc.password");
-        return DriverManager.getConnection (url, username, password);
+    private static Connection getConnection(Properties props) {
+        Connection connection;
+        try {
+            String url = props.getProperty ("jdbc.url") + "/" + 
+                    DatabaseDesignGenerator.INFORMATION_SCHEMA_NAME + 
+                    props.getProperty ("jdbc.suffix");
+            String username = props.getProperty ("jdbc.username");
+            String password = props.getProperty ("jdbc.password");
+            connection =  DriverManager.getConnection (url, username, password);
+        } catch (SQLException e) {
+            log.error ("数据库配置出错!");
+            throw new RuntimeException (e);
+        }
+        return connection;
     }
 }
