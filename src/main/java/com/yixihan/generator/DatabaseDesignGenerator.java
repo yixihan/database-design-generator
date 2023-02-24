@@ -1,6 +1,7 @@
 package com.yixihan.generator;
 
 import cn.hutool.core.io.IORuntimeException;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.log.Log;
 import cn.hutool.log.LogFactory;
@@ -197,7 +198,13 @@ public class DatabaseDesignGenerator {
      */
     private static void writeColumnsExcel (ExcelWriter writer, Tables table) {
         // 设置 sheet 名
-        writer.setSheet (table.getTableComment ());
+        if (writer.getSheetNames ().stream ().anyMatch ((item) -> table.getTableComment ().equals (item))) {
+            log.warn ("有相同的表注释！");
+            writer.setSheet (table.getTableComment () + "-" + RandomUtil.randomInt ());
+        } else {
+            writer.setSheet (table.getTableComment ());
+        }
+    
     
         // 合并单元格后的标题行，使用默认标题样式
         writer.merge(6, table.getTableComment ());
